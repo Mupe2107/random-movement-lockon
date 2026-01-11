@@ -1,0 +1,115 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def update_dot1_motion(i, v_1, p_1, a_1=5, f=300, dt=0.0002):
+
+    '''
+    This function is defined like this for random and rapid movement in zig-zag unpredictable manner
+    it is completely arbitrary and can be switched to whichever function the user pleases
+    '''
+
+    if 0 <= i <= 30000:
+        v_1 = a_1 * np.sin(i / f)
+    elif 30000 < i <= 60000:
+        v_1 -= 10 * dt
+    elif 60000 < i <= 70000:
+        v_1 = v_1
+    elif 70000 < i <= 100000:
+        v_1 += 2 * dt
+    p_1 += v_1 * dt
+    return v_1, p_1
+
+
+# Initialize arrays and matrices
+a = 0
+b = 0
+
+K_p = 4 # Coefficients for PID regulator
+K_d = 4
+
+v_1 = 0  # Initial velocity of Dot 1
+p_1 = 5  # Initial position of Dot 1
+a_1 = 5  # Acceleration rate of Dot 1
+f = 300
+
+x = np.array([[0], [0]])  # Initial position and velocity of Dot 2
+A = np.array([[0, 1], [0, 0]])  # System matrix A
+B = np.array([[0], [1]])  # Input matrix B
+S = np.array([[1], [0], [0], [0], [0]])  # Initial state of vector S
+R = np.array([[0, 1, 1, 1, 0], [0, 1, 1, 1, 0]])  # Some matrix R important for final differential equation
+t = np.linspace(0, 20, 100000)  # Time vector
+dt = t[1] - t[0]  # Time step
+M = np.array([[dt * 100000, 0, 0, 0, -dt * 100000], [dt * 100000, 0, 0, 0, -dt * 100000]])
+
+# Initialize lists to store values
+positions_A, positions_B, velocities_A, velocities_B, positions_1, velocities_1 = [], [], [], [], [], []
+S_values = []  # List to store S at each time step
+
+# Simulation loop
+for i in range(len(t)):
+    # Calculate Dot 1 motion
+    v_1, p_1 = update_dot1_motion(i, v_1, p_1, a_1, f, dt)
+
+    # Control law calculations
+    p_B = x[0, 0]
+    p_A = p_B + 2
+    v_AB = x[1, 0]
+
+    # Update vector S dynamically
+    a = bool(abs(p_A - p_1) < 1.2)
+    b = bool(abs(p_B - p_1) < 1.2)
+
+    T = np.array([[not (a + b), not (a + b), 0, 0, 0],                      #MOST IMPORTANT MATRIX
+                  [a and not (b), a and not (b), a and not (b), 0, 0],
+                  [0, a and b, a and b, a and b, 0],
+                  [0, 0, not (a) and b, not (a) and b, not (a) and b],
+                  [0, 0, 0, not (a + b), not (a + b)]])
+
+
+    S = T @ S  # Update S at each time step
+
+    S_values.append(S.flatten())  # Store the current value of S
+
+    # Control input and state update (remaining code)
+    P = R @ S
+    Q = M @ S
+    u = P * (K_p * (p_1 - (p_A + p_B) / 2) + K_d * (v_1 - v_AB))
+    dxdt = A @ x + B * (u + Q)
+    x = x + dxdt * dt
+
+    # Store values for plotting
+    positions_A.append(p_A)
+    positions_B.append(p_B)
+    velocities_A.append(v_AB)
+    velocities_B.append(v_AB)
+    positions_1.append(p_1)
+    velocities_1.append(v_1)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(t, positions_A, label='Dot A Position', color='b')
+plt.plot(t, positions_B, label='Dot B Position', color='g')
+plt.plot(t, positions_1, label='Dot 1 Position (accelerating)', color='r', linestyle='--')
+plt.title('Positions of Dots A, B, and 1')
+plt.ylabel('Position')
+plt.legend(loc="upper right")
+plt.show()
+plt.figure(figsize=(10, 6))
+plt.plot(t, velocities_A, label='Dot A Velocity', color='b')
+plt.plot(t, velocities_B, label='Dot B Velocity', color='g')
+plt.plot(t, velocities_1, label='Dot 1 Velocity (accelerating)', color='r', linestyle='--')
+plt.xlabel('Time')
+plt.ylabel('Velocity')
+plt.legend(loc="upper right")
+
+# Annotate vector S values below the x-axis
+y_offset = min(velocities_1) +10  # Adjust this to control the height of vector annotations
+for idx in range(0, len(t), 1000):  # Select specific time points
+    S_value = S_values[idx]  # Get the value of vector S at this time
+    time = t[idx]  # Corresponding time
+    S_text = "\n".join([f"[{int(v)}]" for v in S_value])  # Ensure integer values
+    plt.text(time, y_offset, S_text, fontsize=8, color='purple', ha='center', va='top')
+
+plt.tight_layout()
+plt.show()
